@@ -1,0 +1,14 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: google-authz-example
+spec:
+  template:
+    spec:
+      containers:
+      - name: google-authz-example
+        image: mechiru/google-authz-example:v0.0.1
+        env:
+          - name: RUST_LOG
+            value: "google_authz=trace"
+        command: ["./tonic", "your-gcp-project-id"]
