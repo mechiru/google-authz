@@ -18,8 +18,8 @@ hyper = { version = "0.14", default-features = false, features = ["client", "htt
 hyper-rustls = { version = "0.22" }
 
 [[bin]]
-name = "gcp"
-path = "src/gcp.rs"
+name = "tonic"
+path = "src/tonic.rs"
 
 [[bin]]
 name = "hyper"
