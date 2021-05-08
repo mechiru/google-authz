@@ -3,6 +3,19 @@ name = "google-authz"
 version = "0.0.1"
 authors = ["mechiru <u9053u6d41@gmail.com>"]
 edition = "2018"
+license = "MIT OR Apache-2.0"
+description = "This library provides auto-renewed tokens for GCP service authentication."
+repository = "https://github.com/mechiru/google-authz"
+documentation = "https://docs.rs/google-authz"
+categories = ["authentication"]
+keywords = ["google", "cloud", "auth", "gcloud", "gcp"]
+readme = "README.md"
+include = [
+  "Cargo.toml",
+  "LICENSE-APACHE",
+  "LICENSE-MIT",
+  "src/**/*",
+]
 
 [workspace]
 members = ["examples"]
