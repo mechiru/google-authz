@@ -10,6 +10,7 @@ pub struct Client<C, B = Body> {
     inner: AddAuthorization<hyper::Client<C, B>>,
 }
 
+#[allow(clippy::new_ret_no_self)]
 impl Client<(), Body> {
     pub async fn new<C, B>(client: hyper::Client<C, B>) -> Client<C, B> {
         Client { inner: AddAuthorization::init(client).await }

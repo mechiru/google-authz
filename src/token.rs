@@ -44,9 +44,7 @@ struct Client {
 
 impl Client {
     fn new() -> Client {
-        #[cfg(all(feature = "native-certs", feature = "webpki-roots"))]
-        panic!("please enable either one feature: `native-certs` or `webpki-roots`");
-
+        #[allow(unused_variables)]
         #[cfg(feature = "native-certs")]
         let https = HttpsConnector::with_native_roots();
         #[cfg(feature = "webpki-roots")]
