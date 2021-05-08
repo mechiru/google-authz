@@ -1,0 +1,26 @@
+[package]
+name = "examples"
+version = "0.1.0"
+authors = ["mechiru <u9053u6d41@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+tracing-subscriber = { version = "0.2" }
+tokio = { version = "1.5", features = ["macros", "rt-multi-thread"] }
+google-authz = { path = "../", features = ["client"] }
+# grpc + gcp
+tonic = { version = "0.4", features = ["tls"] }
+prost = { version = "0.7" }
+prost-types = { version = "0.7" }
+googapis = { version = "0.4", features = ["google-pubsub-v1"] }
+# hyper
+hyper = { version = "0.14", default-features = false, features = ["client", "http1", "http2"] }
+hyper-rustls = { version = "0.22" }
+
+[[bin]]
+name = "gcp"
+path = "src/gcp.rs"
+
+[[bin]]
+name = "hyper"
+path = "src/hyper.rs"
