@@ -56,6 +56,71 @@ let creds = Credentials::from_file(path, scopes);
 let service = AddAuthorization::init_with(creds, 
 ```
 
+### with [tonic](github.com/hyperium/tonic)
+
+```rust
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn Error>> {
+    tracing_subscriber::fmt::init();
+
+    let project = env::args().nth(1).expect("cargo run --bin tonic -- <GCP_PROJECT_ID>");
+
+    let tls_config = ClientTlsConfig::new()
+        .ca_certificate(Certificate::from_pem(CERTIFICATES))
+        .domain_name("pubsub.googleapis.com");
+
+    let channel = Channel::from_static("https://pubsub.googleapis.com")
+        .tls_config(tls_config)?
+        .connect()
+        .await?;
+
+    let channel = AddAuthorization::init(channel).await;
+
+    let mut client = PublisherClient::new(channel);
+    let resp = client
+        .list_topics(Request::new(ListTopicsRequest {
+            project: format!("projects/{}", project),
+            page_size: 10,
+            ..Default::default()
+        }))
+        .await?;
+    println!("response = {:?}", resp);
+
+    Ok(())
+}
+```
+
+The complete code can be found [here](./examples/src/tonic.rs).
+
+### with [hyper](https://github.com/hyperium/hyper)
+
+```rust
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn Error>> {
+    tracing_subscriber::fmt::init();
+
+    let project = env::args().nth(1).expect("cargo run --bin hyper -- <GCP_PROJECT_ID>");
+
+    let https = HttpsConnector::with_native_roots();
+    let client = hyper::Client::builder().build::<_, Body>(https);
+    let mut client = Client::new(client).await;
+
+    let uri = Uri::try_from(format!(
+        "https://pubsub.googleapis.com/v1/projects/{}/topics?alt=json&prettyPrint=true",
+        project
+    ))?;
+    let (parts, body) = client.get(uri).await?.into_parts();
+    println!("response parts = {:?}", parts);
+
+    let body = String::from_utf8(to_bytes(body).await?.to_vec())?;
+    println!("resposne body = `{}`", body);
+
+    Ok(())
+}
+```
+
+The complete code can be found [here](./examples/src/hyper.rs).
+
 
 ## License
 

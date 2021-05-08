@@ -14,7 +14,7 @@ use std::{env, error::Error};
 async fn main() -> Result<(), Box<dyn Error>> {
     tracing_subscriber::fmt::init();
 
-    let project = env::args().nth(1).expect("cargo run --example tonic -- <GCP_PROJECT_ID>");
+    let project = env::args().nth(1).expect("cargo run --bin tonic -- <GCP_PROJECT_ID>");
 
     let tls_config = ClientTlsConfig::new()
         .ca_certificate(Certificate::from_pem(CERTIFICATES))
