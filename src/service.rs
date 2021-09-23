@@ -5,15 +5,9 @@ use hyper::{
 use parking_lot::RwLock;
 use tracing::{info, trace};
 
-use std::{
-    fmt,
-    future::Future,
-    sync::Arc,
-    task::{self, Poll},
-    time::{Duration, Instant},
-};
+use std::{fmt, future::Future, pin::Pin, sync::Arc, task::{self, Poll}, time::{Duration, Instant}};
 
-use crate::{Credentials, TokenSource};
+use crate::{Credentials, Token, TokenSource, token::Error};
 
 pub struct AddAuthorization<S> {
     inner: Arc<Inner>,
@@ -31,8 +25,9 @@ impl AddAuthorization<()> {
 }
 
 struct Inner {
-    source: TokenSource,
+    source: Arc<TokenSource>,
     cache: RwLock<Option<Cache>>,
+    future: RwLock<Option<Pin<Box<dyn Future<Output = Result<Token, Error>>>>>>,
     max_retry: u8,
 }
 
@@ -42,7 +37,12 @@ impl Inner {
     }
 
     fn init_with(s: impl Into<TokenSource>) -> Self {
-        Self { source: s.into(), cache: RwLock::new(None), max_retry: 5 }
+        Self {
+            source: Arc::new(s.into()),
+            cache: RwLock::new(None),
+            max_retry: 5,
+            future: RwLock::new(None),
+        }
     }
 
     fn poll_ready(&self, cx: &mut task::Context<'_>) -> Poll<()> {
@@ -65,24 +65,33 @@ impl Inner {
             }
         }
 
-        let fut = self.source.token();
-        pin_utils::pin_mut!(fut);
+        let mut future_write_lock = self.future.write();
+        let poll_result = if let Some(fut) =  &mut *future_write_lock {
+            // We are already waiting on a future; poll it.
+            fut.as_mut().poll(cx)
+        } else {
+            // Drop the write lock so that we don't hold it across an `await`.
+            drop(future_write_lock);
 
-        let mut retry = 0;
-        let cache = loop {
-            match fut.as_mut().poll(cx) {
-                Poll::Ready(r) => match r.and_then(|t| t.into_pairs()) {
-                    Ok((value, expiry)) => break Cache::new(value, expiry),
-                    Err(err) => {
-                        info!("an error occurred: retry={}, err={:?}", retry, err);
-                        if retry >= self.max_retry {
-                            panic!("max retry exceeded: retry={}, last error={:?}", retry, err);
-                        }
-                        retry += 1;
-                    }
-                },
-                Poll::Pending => {}
-            }
+            // We are not yet waiting on a future, so initialize one.
+            let source = self.source.clone();
+            let mut fut: Pin<Box<dyn Future<Output=Result<Token, Error>>>> = Box::pin(async move {
+                let r = source.token().await;
+                r
+            });
+            
+            let result = fut.as_mut().poll(cx);
+
+            *self.future.write() = Some(fut);
+            result
+        };
+
+        let cache = match poll_result {
+            Poll::Ready(r)  => match r.and_then(|t| t.into_pairs()) {
+                Ok((value, expiry)) => Cache::new(value, expiry),
+                Err(err) => panic!("Error: {:?}", err)
+            },
+            Poll::Pending => return Poll::Pending
         };
 
         trace!("token updated: expiry={:?}", cache.expiry);
@@ -123,7 +132,7 @@ where
     fn poll_ready(&mut self, cx: &mut task::Context<'_>) -> Poll<Result<(), Self::Error>> {
         match self.inner.poll_ready(cx) {
             Poll::Ready(()) => self.service.poll_ready(cx),
-            Poll::Pending => unreachable!(),
+            Poll::Pending => Poll::Pending,
         }
     }
 
