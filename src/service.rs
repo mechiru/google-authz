@@ -5,14 +5,7 @@ use hyper::{
 use parking_lot::RwLock;
 use tracing::{info, trace};
 
-use std::{
-    fmt,
-    future::Future,
-    pin::Pin,
-    sync::Arc,
-    task::{self, Poll},
-    time::{Duration, Instant},
-};
+use std::{fmt, future::Future, pin::Pin, sync::{Arc, Mutex}, task::{self, Poll}, time::{Duration, Instant}};
 
 use crate::{token::Error, Credentials, Token, TokenSource};
 
@@ -46,7 +39,7 @@ enum TokenStatus {
     /// Represents the state where we are in the process of obtaining a token
     /// from the server, possibly after some unsuccessful attempts.
     Waiting {
-        future: Pin<Box<dyn Future<Output = Result<Token, Error>>>>,
+        future: Mutex<Pin<Box<dyn Future<Output = Result<Token, Error>> + Send>>>,
         retry: u8,
     },
 }
@@ -63,7 +56,7 @@ impl Inner {
     }
 
     /// Build a boxed future for fetching a token from the given TokenSource reference.
-    fn do_fetch(source: Arc<TokenSource>) -> Pin<Box<dyn Future<Output = Result<Token, Error>>>> {
+    fn do_fetch(source: Arc<TokenSource>) -> Pin<Box<dyn Future<Output = Result<Token, Error>> + Send>> {
         Box::pin(async move {
             let r = source.token().await;
             r
@@ -72,7 +65,7 @@ impl Inner {
 
     fn init_with(s: impl Into<TokenSource>) -> Self {
         let source = Arc::new(s.into());
-        let future = Inner::do_fetch(source.clone());
+        let future = Mutex::new(Inner::do_fetch(source.clone()));
 
         Self {
             source,
@@ -94,7 +87,7 @@ impl Inner {
                 let mut status = self.status.write();
                 let mut future = Inner::do_fetch(self.source.clone());
                 let _ = future.as_mut().poll(cx);
-                *status = TokenStatus::Waiting { retry: 0, future };
+                *status = TokenStatus::Waiting { retry: 0, future: Mutex::new(future) };
     
                 trace!("token is expired: expiry={:?}", expiry);
                 return Poll::Pending;    
@@ -105,7 +98,15 @@ impl Inner {
 
         let mut status = self.status.write();
         if let TokenStatus::Waiting { future, retry } = &mut *status {
-            match future.as_mut().poll(cx) {
+            let mut future = if let Ok(future) = future.try_lock() {
+                future
+            } else {
+                return Poll::Pending;
+            };
+            let result = future.as_mut().poll(cx);
+            drop(future);
+
+            match result {
                 Poll::Pending => return Poll::Pending,
                 Poll::Ready(r) => match r.and_then(|t| t.into_pairs()) {
                     Ok((value, expiry)) => {
@@ -120,7 +121,7 @@ impl Inner {
                         }
                         let mut future = Inner::do_fetch(self.source.clone());
                         let _ = future.as_mut().poll(cx);
-                        *status = TokenStatus::Waiting { retry: *retry+1, future };
+                        *status = TokenStatus::Waiting { retry: *retry+1, future: Mutex::new(future) };
                         return Poll::Pending;
                     }
                 },
