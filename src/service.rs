@@ -5,9 +5,16 @@ use hyper::{
 use parking_lot::RwLock;
 use tracing::{info, trace};
 
-use std::{fmt, future::Future, pin::Pin, sync::Arc, task::{self, Poll}, time::{Duration, Instant}};
+use std::{
+    fmt,
+    future::Future,
+    pin::Pin,
+    sync::Arc,
+    task::{self, Poll},
+    time::{Duration, Instant},
+};
 
-use crate::{Credentials, Token, TokenSource, token::Error};
+use crate::{token::Error, Credentials, Token, TokenSource};
 
 pub struct AddAuthorization<S> {
     inner: Arc<Inner>,
@@ -16,18 +23,37 @@ pub struct AddAuthorization<S> {
 
 impl AddAuthorization<()> {
     pub async fn init<S>(service: S) -> AddAuthorization<S> {
-        AddAuthorization { inner: Arc::new(Inner::init().await), service }
+        AddAuthorization {
+            inner: Arc::new(Inner::init().await),
+            service,
+        }
     }
 
     pub fn init_with<S>(source: impl Into<TokenSource>, service: S) -> AddAuthorization<S> {
-        AddAuthorization { inner: Arc::new(Inner::init_with(source)), service }
+        AddAuthorization {
+            inner: Arc::new(Inner::init_with(source)),
+            service,
+        }
     }
+}
+
+/// Represents the state of the current token.
+enum TokenStatus {
+    /// Represents the state where we have already received and cached a token
+    /// from the server, which may be expired.
+    Cached(Cache),
+
+    /// Represents the state where we are in the process of obtaining a token
+    /// from the server, possibly after some unsuccessful attempts.
+    Waiting {
+        future: Pin<Box<dyn Future<Output = Result<Token, Error>>>>,
+        retry: u8,
+    },
 }
 
 struct Inner {
     source: Arc<TokenSource>,
-    cache: RwLock<Option<Cache>>,
-    future: RwLock<Option<Pin<Box<dyn Future<Output = Result<Token, Error>>>>>>,
+    status: RwLock<TokenStatus>,
     max_retry: u8,
 }
 
@@ -36,67 +62,74 @@ impl Inner {
         Self::init_with(Credentials::default().await)
     }
 
+    /// Build a boxed future for fetching a token from the given TokenSource reference.
+    fn do_fetch(source: Arc<TokenSource>) -> Pin<Box<dyn Future<Output = Result<Token, Error>>>> {
+        Box::pin(async move {
+            let r = source.token().await;
+            r
+        })
+    }
+
     fn init_with(s: impl Into<TokenSource>) -> Self {
+        let source = Arc::new(s.into());
+        let future = Inner::do_fetch(source.clone());
+
         Self {
-            source: Arc::new(s.into()),
-            cache: RwLock::new(None),
+            source,
             max_retry: 5,
-            future: RwLock::new(None),
+            status: RwLock::new(TokenStatus::Waiting { retry: 0, future }),
+        }
+    }
+
+    fn cache(&self) -> Option<Cache> {
+        match &*self.status.read() {
+            TokenStatus::Cached(cache) => Some(cache.clone()),
+            _ => None
         }
     }
 
     fn poll_ready(&self, cx: &mut task::Context<'_>) -> Poll<()> {
-        if let Some(ref cache) = *self.cache.read() {
-            if !cache.expired(Instant::now()) {
-                return Poll::Ready(());
-            }
-            trace!("token is expired: expiry={:?}", cache.expiry);
-        } else {
-            trace!("token is uninitialized");
-        }
-
-        let mut lock = self.cache.write();
-        trace!("start token update...");
-
-        if let Some(ref cache) = *lock {
-            if !cache.expired(Instant::now()) {
-                trace!("token is already updated: expiry={:?}", cache.expiry);
+        if let Some((expiry, expired)) = self.cache().map(|c| (c.expiry, c.expired(Instant::now()))) {
+            if expired {
+                let mut status = self.status.write();
+                let mut future = Inner::do_fetch(self.source.clone());
+                let _ = future.as_mut().poll(cx);
+                *status = TokenStatus::Waiting { retry: 0, future };
+    
+                trace!("token is expired: expiry={:?}", expiry);
+                return Poll::Pending;    
+            } else {
                 return Poll::Ready(());
             }
         }
 
-        let mut future_write_lock = self.future.write();
-        let poll_result = if let Some(fut) =  &mut *future_write_lock {
-            // We are already waiting on a future; poll it.
-            fut.as_mut().poll(cx)
+        let mut status = self.status.write();
+        if let TokenStatus::Waiting { future, retry } = &mut *status {
+            match future.as_mut().poll(cx) {
+                Poll::Pending => return Poll::Pending,
+                Poll::Ready(r) => match r.and_then(|t| t.into_pairs()) {
+                    Ok((value, expiry)) => {
+                        trace!("token updated: expiry={:?}", expiry);
+                        *status = TokenStatus::Cached(Cache::new(value, expiry));
+                        return Poll::Ready(())
+                    },
+                    Err(err) => {
+                        info!("an error occurred: retry={}, err={:?}", retry, err);
+                        if *retry > self.max_retry {
+                            panic!("max retry exceeded: retry={}, last error={:?}", retry, err);
+                        }
+                        let mut future = Inner::do_fetch(self.source.clone());
+                        let _ = future.as_mut().poll(cx);
+                        *status = TokenStatus::Waiting { retry: *retry+1, future };
+                        return Poll::Pending;
+                    }
+                },
+            }
         } else {
-            // Drop the write lock so that we don't hold it across an `await`.
-            drop(future_write_lock);
-
-            // We are not yet waiting on a future, so initialize one.
-            let source = self.source.clone();
-            let mut fut: Pin<Box<dyn Future<Output=Result<Token, Error>>>> = Box::pin(async move {
-                let r = source.token().await;
-                r
-            });
-            
-            let result = fut.as_mut().poll(cx);
-
-            *self.future.write() = Some(fut);
-            result
-        };
-
-        let cache = match poll_result {
-            Poll::Ready(r)  => match r.and_then(|t| t.into_pairs()) {
-                Ok((value, expiry)) => Cache::new(value, expiry),
-                Err(err) => panic!("Error: {:?}", err)
-            },
-            Poll::Pending => return Poll::Pending
-        };
-
-        trace!("token updated: expiry={:?}", cache.expiry);
-        *lock = Some(cache);
-        Poll::Ready(())
+            // It would take a rare race condition to get here, but if we do, we
+            // poll so that we re-enter from the top to process the new state.
+            return Poll::Pending;
+        }
     }
 }
 
@@ -113,7 +146,10 @@ impl Cache {
 
     fn expired(&self, at: Instant) -> bool {
         const EXPIRY_DELTA: Duration = Duration::from_secs(10);
-        self.expiry.checked_duration_since(at).map(|dur| dur < EXPIRY_DELTA).unwrap_or(true)
+        self.expiry
+            .checked_duration_since(at)
+            .map(|dur| dur < EXPIRY_DELTA)
+            .unwrap_or(true)
     }
 
     fn value(&self) -> HeaderValue {
@@ -137,7 +173,7 @@ where
     }
 
     fn call(&mut self, mut req: Request<B>) -> Self::Future {
-        match *self.inner.cache.read() {
+        match self.inner.cache() {
             Some(ref cache) => req.headers_mut().insert(AUTHORIZATION, cache.value()),
             None => unreachable!(),
         };
@@ -147,13 +183,18 @@ where
 
 impl<S: Clone> Clone for AddAuthorization<S> {
     fn clone(&self) -> Self {
-        Self { inner: self.inner.clone(), service: self.service.clone() }
+        Self {
+            inner: self.inner.clone(),
+            service: self.service.clone(),
+        }
     }
 }
 
 impl<S: fmt::Debug> fmt::Debug for AddAuthorization<S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("AddAuthorization").field("service", &self.service).finish()
+        f.debug_struct("AddAuthorization")
+            .field("service", &self.service)
+            .finish()
     }
 }
 
