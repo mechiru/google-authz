@@ -8,31 +8,41 @@ use tracing::{info, trace};
 use std::{
     fmt,
     future::Future,
+    pin::Pin,
     sync::Arc,
     task::{self, Poll},
     time::{Duration, Instant},
 };
 
-use crate::{Credentials, TokenSource};
+use crate::{token, Credentials, Token, TokenSource};
 
 pub struct AddAuthorization<S> {
-    inner: Arc<Inner>,
+    inner: Arc<RwLock<Inner>>,
     service: S,
 }
 
 impl AddAuthorization<()> {
     pub async fn init<S>(service: S) -> AddAuthorization<S> {
-        AddAuthorization { inner: Arc::new(Inner::init().await), service }
+        AddAuthorization { inner: Arc::new(RwLock::new(Inner::init().await)), service }
     }
 
     pub fn init_with<S>(source: impl Into<TokenSource>, service: S) -> AddAuthorization<S> {
-        AddAuthorization { inner: Arc::new(Inner::init_with(source)), service }
+        AddAuthorization { inner: Arc::new(RwLock::new(Inner::init_with(source))), service }
     }
 }
 
+enum State {
+    Uninitialized,
+    Fetching {
+        retry: u8,
+        fut: Pin<Box<dyn Future<Output = token::Result<Token>> + Send + 'static>>,
+    },
+    Fetched(Cache),
+}
+
 struct Inner {
+    state: State,
     source: TokenSource,
-    cache: RwLock<Option<Cache>>,
     max_retry: u8,
 }
 
@@ -42,52 +52,52 @@ impl Inner {
     }
 
     fn init_with(s: impl Into<TokenSource>) -> Self {
-        Self { source: s.into(), cache: RwLock::new(None), max_retry: 5 }
+        Self { state: State::Uninitialized, source: s.into(), max_retry: 5 }
     }
 
-    fn poll_ready(&self, cx: &mut task::Context<'_>) -> Poll<()> {
-        if let Some(ref cache) = *self.cache.read() {
-            if !cache.expired(Instant::now()) {
-                return Poll::Ready(());
-            }
-            trace!("token is expired: expiry={:?}", cache.expiry);
-        } else {
-            trace!("token is uninitialized");
-        }
+    fn can_skip_poll_ready(&self) -> bool {
+        matches!(self.state, State::Fetched(ref cache) if !cache.expired(Instant::now()))
+    }
 
-        let mut lock = self.cache.write();
-        trace!("start token update...");
-
-        if let Some(ref cache) = *lock {
-            if !cache.expired(Instant::now()) {
-                trace!("token is already updated: expiry={:?}", cache.expiry);
-                return Poll::Ready(());
-            }
-        }
-
-        let fut = self.source.token();
-        pin_utils::pin_mut!(fut);
-
-        let mut retry = 0;
-        let cache = loop {
-            match fut.as_mut().poll(cx) {
-                Poll::Ready(r) => match r.and_then(|t| t.into_pairs()) {
-                    Ok((value, expiry)) => break Cache::new(value, expiry),
-                    Err(err) => {
-                        info!("an error occurred: retry={}, err={:?}", retry, err);
-                        if retry >= self.max_retry {
-                            panic!("max retry exceeded: retry={}, last error={:?}", retry, err);
+    fn poll_ready(&mut self, cx: &mut task::Context<'_>) -> Poll<()> {
+        loop {
+            match self.state {
+                State::Uninitialized => {
+                    trace!("token is uninitialized");
+                    self.state = State::Fetching { retry: 0, fut: Box::pin(self.source.token()) };
+                    continue;
+                }
+                State::Fetching { ref retry, ref mut fut } => match fut.as_mut().poll(cx) {
+                    Poll::Ready(r) => match r.and_then(|t| t.into_pairs()) {
+                        Ok((value, expiry)) => {
+                            self.state = State::Fetched(Cache::new(value, expiry));
+                            trace!("token updated: expiry={:?}", expiry);
+                            return Poll::Ready(());
                         }
-                        retry += 1;
-                    }
+                        Err(err) => {
+                            info!("an error occurred: retry={}, err={:?}", retry, err);
+                            if *retry >= self.max_retry {
+                                panic!("max retry exceeded: retry={}, last error={:?}", retry, err);
+                            }
+                            self.state = State::Fetching {
+                                retry: retry + 1,
+                                fut: Box::pin(self.source.token()),
+                            };
+                            continue;
+                        }
+                    },
+                    Poll::Pending => return Poll::Pending,
                 },
-                Poll::Pending => {}
+                State::Fetched(ref cache) => {
+                    if !cache.expired(Instant::now()) {
+                        return Poll::Ready(());
+                    }
+                    trace!("token is expired: expiry={:?}", cache.expiry);
+                    self.state = State::Fetching { retry: 0, fut: Box::pin(self.source.token()) };
+                    continue;
+                }
             }
-        };
-
-        trace!("token updated: expiry={:?}", cache.expiry);
-        *lock = Some(cache);
-        Poll::Ready(())
+        }
     }
 }
 
@@ -121,16 +131,19 @@ where
     type Future = S::Future;
 
     fn poll_ready(&mut self, cx: &mut task::Context<'_>) -> Poll<Result<(), Self::Error>> {
-        match self.inner.poll_ready(cx) {
+        if self.inner.read().can_skip_poll_ready() {
+            return self.service.poll_ready(cx);
+        }
+        match self.inner.write().poll_ready(cx) {
             Poll::Ready(()) => self.service.poll_ready(cx),
-            Poll::Pending => unreachable!(),
+            Poll::Pending => Poll::Pending,
         }
     }
 
     fn call(&mut self, mut req: Request<B>) -> Self::Future {
-        match *self.inner.cache.read() {
-            Some(ref cache) => req.headers_mut().insert(AUTHORIZATION, cache.value()),
-            None => unreachable!(),
+        match self.inner.read().state {
+            State::Fetched(ref cache) => req.headers_mut().insert(AUTHORIZATION, cache.value()),
+            _ => unreachable!(),
         };
         self.service.call(req)
     }

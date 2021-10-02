@@ -6,9 +6,13 @@ use hyper::{
 };
 use hyper_rustls::HttpsConnector;
 
-use std::time::{Duration, Instant};
+use std::{
+    future::Future,
+    pin::Pin,
+    time::{Duration, Instant},
+};
 
-use crate::{credentials, Credentials};
+use crate::{credentials, token, Credentials};
 
 // === error ===
 
@@ -62,27 +66,34 @@ impl Client {
         }
     }
 
-    async fn request<T, U>(&self, uri: &Uri, body: &T) -> Result<U>
+    fn request<T>(&self, uri: &Uri, body: &T) -> Request<Body>
     where
         T: serde::Serialize,
-        U: serde::de::DeserializeOwned,
     {
-        use bytes::Buf as _;
-
         let mut req = Request::builder().uri(uri).method(Method::POST);
         let headers = req.headers_mut().unwrap();
         headers.insert(USER_AGENT, self.user_agent.clone());
         headers.insert(CONTENT_TYPE, self.content_type.clone());
         let body = Body::from(serde_urlencoded::to_string(body).unwrap());
-        let req = req.body(body).unwrap();
+        req.body(body).unwrap()
+    }
 
-        let (parts, body) = self.inner.request(req).await?.into_parts();
-        match parts.status {
-            StatusCode::OK => {
-                let buf = aggregate(body).await?;
-                serde_json::from_reader(buf.reader()).map_err(Error::InvalidJson)
+    fn send<T>(&self, req: Request<Body>) -> impl Future<Output = Result<T>> + Send + 'static
+    where
+        T: serde::de::DeserializeOwned,
+    {
+        let fut = self.inner.request(req);
+        async {
+            use bytes::Buf as _;
+
+            let (parts, body) = fut.await?.into_parts();
+            match parts.status {
+                StatusCode::OK => {
+                    let buf = aggregate(body).await?;
+                    serde_json::from_reader(buf.reader()).map_err(Error::InvalidJson)
+                }
+                code => Err(Error::StatusCode(code)),
             }
-            code => Err(Error::StatusCode(code)),
         }
     }
 }
@@ -118,11 +129,11 @@ pub enum TokenSource {
 }
 
 impl TokenSource {
-    pub async fn token(&self) -> Result<Token> {
+    pub fn token(&self) -> Pin<Box<dyn Future<Output = token::Result<Token>> + Send + 'static>> {
         match self {
-            TokenSource::User(user) => user.token().await,
-            TokenSource::ServiceAccount(sa) => sa.token().await,
-            TokenSource::Metadata(meta) => meta.token().await,
+            TokenSource::User(user) => Box::pin(user.token()),
+            TokenSource::ServiceAccount(sa) => Box::pin(sa.token()),
+            TokenSource::Metadata(meta) => Box::pin(meta.token()),
         }
     }
 }
@@ -168,20 +179,19 @@ pub(super) mod user {
             }
         }
 
-        pub(crate) async fn token(&self) -> Result<Token> {
-            self.inner
-                .request(
-                    &self.token_uri,
-                    &Payload {
-                        client_id: &self.creds.client_id,
-                        client_secret: &self.creds.client_secret,
-                        grant_type: "refresh_token",
-                        // The reflesh token is not included in the response from google's server,
-                        // so it always uses the specified refresh token from the file.
-                        refresh_token: &self.creds.refresh_token,
-                    },
-                )
-                .await
+        pub(crate) fn token(&self) -> impl Future<Output = Result<Token>> + Send + 'static {
+            let req = self.inner.request(
+                &self.token_uri,
+                &Payload {
+                    client_id: &self.creds.client_id,
+                    client_secret: &self.creds.client_secret,
+                    grant_type: "refresh_token",
+                    // The reflesh token is not included in the response from google's server,
+                    // so it always uses the specified refresh token from the file.
+                    refresh_token: &self.creds.refresh_token,
+                },
+            );
+            self.inner.send(req)
         }
     }
 }
@@ -250,7 +260,7 @@ pub(super) mod service_account {
             }
         }
 
-        pub(crate) async fn token(&self) -> Result<Token> {
+        pub(crate) fn token(&self) -> impl Future<Output = Result<Token>> + Send + 'static {
             const EXPIRE: u64 = 60 * 60;
 
             let iat = issued_at();
@@ -262,15 +272,14 @@ pub(super) mod service_account {
                 exp: iat + EXPIRE,
             };
 
-            self.inner
-                .request(
-                    &self.token_uri,
-                    &Payload {
-                        grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-                        assertion: &encode(&self.header, &claims, &self.private_key).unwrap(),
-                    },
-                )
-                .await
+            let req = self.inner.request(
+                &self.token_uri,
+                &Payload {
+                    grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+                    assertion: &encode(&self.header, &claims, &self.private_key).unwrap(),
+                },
+            );
+            self.inner.send(req)
         }
     }
 }
@@ -307,11 +316,10 @@ pub(super) mod metadata {
             Self { inner: meta.client, path_and_query }
         }
 
-        pub async fn token(&self) -> Result<Token> {
-            if !self.inner.on_gce().await? {
-                panic!("this process is not running on GCE")
-            }
-            Ok(self.inner.get_as(self.path_and_query.clone()).await?)
+        pub fn token(&self) -> impl Future<Output = Result<Token>> + Send + 'static {
+            // Already checked that this process is running on GCE.
+            let fut = self.inner.get_as(self.path_and_query.clone());
+            async { Ok(fut.await?) }
         }
     }
 }
