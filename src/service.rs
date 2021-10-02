@@ -76,9 +76,12 @@ impl Inner {
                         }
                         Err(err) => {
                             info!("an error occurred: retry={}, err={:?}", retry, err);
-                            if *retry >= self.max_retry {
-                                panic!("max retry exceeded: retry={}, last error={:?}", retry, err);
-                            }
+                            assert!(
+                                *retry < self.max_retry,
+                                "max retry exceeded: retry={}, last error={:?}",
+                                retry,
+                                err
+                            );
                             self.state = State::Fetching {
                                 retry: retry + 1,
                                 fut: Box::pin(self.source.token()),
