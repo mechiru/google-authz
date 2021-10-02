@@ -1,8 +1,8 @@
+use std::{convert::TryFrom, env, error::Error};
+
 use google_authz::Client;
 use hyper::{body::to_bytes, Body, Uri};
 use hyper_rustls::HttpsConnector;
-
-use std::{convert::TryFrom, env, error::Error};
 
 // https://cloud.google.com/pubsub/docs/reference/rest/v1/projects.topics/list
 #[tokio::main]

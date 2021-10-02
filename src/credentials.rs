@@ -1,10 +1,10 @@
-use hyper::{client::HttpConnector, Body};
-use tracing::trace;
-
 use std::{
     env, fs,
     path::{Path, PathBuf},
 };
+
+use hyper::{client::HttpConnector, Body};
+use tracing::trace;
 
 /// Represents errors that can occur during finding credentials.
 #[derive(thiserror::Error, Debug)]
@@ -229,32 +229,25 @@ mod test {
 }"#;
     #[test]
     fn test_from_json() -> Result<()> {
-        assert_eq!(
-            from_json(SA, &[])?,
-            Credentials {
-                scopes: &[],
-                kind: Kind::ServiceAccount(ServiceAccount {
-                    client_email: "[SERVICE-ACCOUNT-EMAIL]".into(),
-                    private_key_id: "[KEY-ID]".into(),
-                    private_key:
-                        "-----BEGIN PRIVATE KEY-----\n[PRIVATE-KEY]\n-----END PRIVATE KEY-----\n"
-                            .into(),
-                    token_uri: "https://accounts.google.com/o/oauth2/token".into(),
-                })
-            }
-        );
+        assert_eq!(from_json(SA, &[])?, Credentials {
+            scopes: &[],
+            kind: Kind::ServiceAccount(ServiceAccount {
+                client_email: "[SERVICE-ACCOUNT-EMAIL]".into(),
+                private_key_id: "[KEY-ID]".into(),
+                private_key:
+                    "-----BEGIN PRIVATE KEY-----\n[PRIVATE-KEY]\n-----END PRIVATE KEY-----\n".into(),
+                token_uri: "https://accounts.google.com/o/oauth2/token".into(),
+            })
+        });
 
-        assert_eq!(
-            from_json(USER, &[])?,
-            Credentials {
-                scopes: &[],
-                kind: Kind::User(User {
-                    client_id: "xxx.apps.googleusercontent.com".into(),
-                    client_secret: "secret-xxx".into(),
-                    refresh_token: "refresh-xxx".into(),
-                })
-            }
-        );
+        assert_eq!(from_json(USER, &[])?, Credentials {
+            scopes: &[],
+            kind: Kind::User(User {
+                client_id: "xxx.apps.googleusercontent.com".into(),
+                client_secret: "secret-xxx".into(),
+                refresh_token: "refresh-xxx".into(),
+            })
+        });
 
         Ok(())
     }

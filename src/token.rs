@@ -1,3 +1,9 @@
+use std::{
+    future::Future,
+    pin::Pin,
+    time::{Duration, Instant},
+};
+
 use hyper::{
     body::{aggregate, Body},
     client::HttpConnector,
@@ -5,12 +11,6 @@ use hyper::{
     Method, Request, StatusCode, Uri,
 };
 use hyper_rustls::HttpsConnector;
-
-use std::{
-    future::Future,
-    pin::Pin,
-    time::{Duration, Instant},
-};
 
 use crate::{credentials, token, Credentials};
 
@@ -180,28 +180,25 @@ pub(super) mod user {
         }
 
         pub(crate) fn token(&self) -> impl Future<Output = Result<Token>> + Send + 'static {
-            let req = self.inner.request(
-                &self.token_uri,
-                &Payload {
-                    client_id: &self.creds.client_id,
-                    client_secret: &self.creds.client_secret,
-                    grant_type: "refresh_token",
-                    // The reflesh token is not included in the response from google's server,
-                    // so it always uses the specified refresh token from the file.
-                    refresh_token: &self.creds.refresh_token,
-                },
-            );
+            let req = self.inner.request(&self.token_uri, &Payload {
+                client_id: &self.creds.client_id,
+                client_secret: &self.creds.client_secret,
+                grant_type: "refresh_token",
+                // The reflesh token is not included in the response from google's server,
+                // so it always uses the specified refresh token from the file.
+                refresh_token: &self.creds.refresh_token,
+            });
             self.inner.send(req)
         }
     }
 }
 
 pub(super) mod service_account {
-    use super::*;
+    use std::time::SystemTime;
 
     use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
 
-    use std::time::SystemTime;
+    use super::*;
 
     // If client machine's time is in the future according
     // to Google servers, an access token will not be issued.
@@ -272,24 +269,21 @@ pub(super) mod service_account {
                 exp: iat + EXPIRE,
             };
 
-            let req = self.inner.request(
-                &self.token_uri,
-                &Payload {
-                    grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-                    assertion: &encode(&self.header, &claims, &self.private_key).unwrap(),
-                },
-            );
+            let req = self.inner.request(&self.token_uri, &Payload {
+                grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+                assertion: &encode(&self.header, &claims, &self.private_key).unwrap(),
+            });
             self.inner.send(req)
         }
     }
 }
 
 pub(super) mod metadata {
-    use super::*;
+    use std::str::FromStr;
 
     use hyper::{client::HttpConnector, http::uri::PathAndQuery, Body};
 
-    use std::str::FromStr;
+    use super::*;
 
     #[derive(serde::Serialize)]
     struct Query<'a> {

@@ -1,10 +1,3 @@
-use hyper::{
-    header::{HeaderValue, AUTHORIZATION},
-    Request,
-};
-use parking_lot::RwLock;
-use tracing::{info, trace};
-
 use std::{
     fmt,
     future::Future,
@@ -13,6 +6,13 @@ use std::{
     task::{self, Poll},
     time::{Duration, Instant},
 };
+
+use hyper::{
+    header::{HeaderValue, AUTHORIZATION},
+    Request,
+};
+use parking_lot::RwLock;
+use tracing::{info, trace};
 
 use crate::{token, Credentials, Token, TokenSource};
 

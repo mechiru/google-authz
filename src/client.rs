@@ -1,8 +1,8 @@
+use std::{error, fmt};
+
 use hyper::{body::HttpBody, client::connect::Connect, Body, Request, Response};
 use tower_service::Service;
 use tracing::warn;
-
-use std::{error, fmt};
 
 use crate::{service::AddAuthorization, token::TokenSource};
 

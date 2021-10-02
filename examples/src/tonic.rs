@@ -1,3 +1,5 @@
+use std::{env, error::Error};
+
 use googapis::{
     google::pubsub::v1::{publisher_client::PublisherClient, ListTopicsRequest},
     CERTIFICATES,
@@ -7,8 +9,6 @@ use tonic::{
     transport::{Certificate, Channel, ClientTlsConfig},
     Request,
 };
-
-use std::{env, error::Error};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
