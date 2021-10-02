@@ -144,10 +144,9 @@ where
     }
 
     fn call(&mut self, mut req: Request<B>) -> Self::Future {
-        match self.inner.read().state {
-            State::Fetched(ref cache) => req.headers_mut().insert(AUTHORIZATION, cache.value()),
-            _ => unreachable!(),
-        };
+        if let State::Fetched(ref cache) = self.inner.read().state {
+            req.headers_mut().insert(AUTHORIZATION, cache.value());
+        }
         self.service.call(req)
     }
 }
