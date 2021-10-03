@@ -35,13 +35,30 @@ enum State {
     Uninitialized,
     Fetching {
         retry: u8,
-        fut: Pin<Box<dyn Future<Output = token::Result<Token>> + Send + 'static>>,
+        fut: RefGuard<Pin<Box<dyn Future<Output = token::Result<Token>> + Send + 'static>>>,
     },
-    Fetched(Cache),
+    Fetched,
 }
+
+/// RefGuard wraps a `Send` type to make it `Sync`, by ensuring that it is only
+/// ever accessed through a &mut pointer.
+struct RefGuard<T: Send>(T);
+
+impl<T: Send> RefGuard<T> {
+    pub fn new(value: T) -> Self {
+        RefGuard(value)
+    }
+
+    pub fn get_mut(&mut self) -> &mut T {
+        &mut self.0
+    }
+}
+
+unsafe impl<T: Send> Sync for RefGuard<T> {}
 
 struct Inner {
     state: State,
+    cache: Option<Cache>,
     source: TokenSource,
     max_retry: u8,
 }
@@ -52,11 +69,16 @@ impl Inner {
     }
 
     fn init_with(s: impl Into<TokenSource>) -> Self {
-        Self { state: State::Uninitialized, source: s.into(), max_retry: 5 }
+        Self { state: State::Uninitialized, cache: None, source: s.into(), max_retry: 5 }
+    }
+
+    #[inline]
+    fn cache_ref(&self) -> &Cache {
+        self.cache.as_ref().unwrap()
     }
 
     fn can_skip_poll_ready(&self) -> bool {
-        matches!(self.state, State::Fetched(ref cache) if !cache.expired(Instant::now()))
+        matches!(self.state, State::Fetched) && !self.cache_ref().expired(Instant::now())
     }
 
     fn poll_ready(&mut self, cx: &mut task::Context<'_>) -> Poll<()> {
@@ -64,13 +86,14 @@ impl Inner {
             match self.state {
                 State::Uninitialized => {
                     trace!("token is uninitialized");
-                    self.state = State::Fetching { retry: 0, fut: Box::pin(self.source.token()) };
+                    self.state = State::Fetching { retry: 0, fut: RefGuard::new(Box::pin(self.source.token())) };
                     continue;
                 }
-                State::Fetching { ref retry, ref mut fut } => match fut.as_mut().poll(cx) {
+                State::Fetching { ref retry, ref mut fut } => match fut.get_mut().as_mut().poll(cx) {
                     Poll::Ready(r) => match r.and_then(|t| t.into_pairs()) {
                         Ok((value, expiry)) => {
-                            self.state = State::Fetched(Cache::new(value, expiry));
+                            self.cache = Some(Cache::new(value, expiry));
+                            self.state = State::Fetched;
                             trace!("token updated: expiry={:?}", expiry);
                             return Poll::Ready(());
                         }
@@ -82,19 +105,20 @@ impl Inner {
                             }
                             self.state = State::Fetching {
                                 retry: retry + 1,
-                                fut: Box::pin(self.source.token()),
+                                fut: RefGuard::new(Box::pin(self.source.token())),
                             };
                             continue;
                         }
                     },
                     Poll::Pending => return Poll::Pending,
                 },
-                State::Fetched(ref cache) => {
+                State::Fetched => {
+                    let cache = self.cache_ref();
                     if !cache.expired(Instant::now()) {
                         return Poll::Ready(());
                     }
-                    trace!("token is expired: expiry={:?}", cache.expiry);
-                    self.state = State::Fetching { retry: 0, fut: Box::pin(self.source.token()) };
+                    trace!("token will expire: expiry={:?}", cache.expiry);
+                    self.state = State::Fetching { retry: 0, fut: RefGuard::new(Box::pin(self.source.token())) };
                     continue;
                 }
             }
@@ -142,9 +166,7 @@ where
     }
 
     fn call(&mut self, mut req: Request<B>) -> Self::Future {
-        if let State::Fetched(ref cache) = self.inner.read().state {
-            req.headers_mut().insert(AUTHORIZATION, cache.value());
-        }
+        req.headers_mut().insert(AUTHORIZATION, self.inner.read().cache_ref().value());
         self.service.call(req)
     }
 }
@@ -164,6 +186,54 @@ impl<S: fmt::Debug> fmt::Debug for AddAuthorization<S> {
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn compile_test() {
+        #[derive(Clone)]
+        struct Counter {
+            cur: i32,
+        }
+
+        impl Counter {
+            fn new() -> Self {
+                Counter { cur: 0 }
+            }
+        }
+
+        impl<B> tower_service::Service<Request<B>> for Counter {
+            type Response = i32;
+            type Error = i32;
+            type Future = Pin<Box<dyn Future<Output = Result<i32, i32>> + Send + 'static>>;
+
+            fn poll_ready(&mut self, _: &mut task::Context<'_>) -> Poll<Result<(), Self::Error>> {
+                Poll::Ready(Ok(()))
+            }
+
+            fn call(&mut self, _: Request<B>) -> Self::Future {
+                self.cur += 1;
+                let current = self.cur;
+                Box::pin(async move { Ok(current) })
+            }
+        }
+
+        fn assert_send<T: Send>(_: T) {}
+        fn assert_sync<T: Sync>(_: T) {}
+
+        let svc = AddAuthorization::init_with(
+            Credentials::from_json(
+                br#"{
+  "client_id": "xxx.apps.googleusercontent.com",
+  "client_secret": "secret-xxx",
+  "refresh_token": "refresh-xxx",
+  "type": "authorized_user"
+}"#,
+                &[],
+            ),
+            Counter::new(),
+        );
+        assert_send(svc.clone());
+        assert_sync(svc);
+    }
 
     #[test]
     fn cache_expiry() {
