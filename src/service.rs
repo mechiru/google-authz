@@ -35,14 +35,26 @@ enum State {
     Uninitialized,
     Fetching {
         retry: u8,
-        fut: Pin<Box<dyn Future<Output = token::Result<Token>> + Send + 'static>>,
+        fut: RefGuard<Pin<Box<dyn Future<Output = token::Result<Token>> + Send + 'static>>>,
     },
     Fetched,
 }
 
-// To read/write `State.Fetching` variant, use RwLock::write to access it.
-unsafe impl Send for State {}
-unsafe impl Sync for State {}
+/// RefGuard wraps a `Send` type to make it `Sync`, by ensuring that it is only
+/// ever accessed through a &mut pointer.
+struct RefGuard<T: Send>(T);
+
+impl<T: Send> RefGuard<T> {
+    pub fn new(value: T) -> Self {
+        RefGuard(value)
+    }
+
+    pub fn get_mut(&mut self) -> &mut T {
+        &mut self.0
+    }
+}
+
+unsafe impl<T: Send> Sync for RefGuard<T> {}
 
 struct Inner {
     state: State,
@@ -74,10 +86,10 @@ impl Inner {
             match self.state {
                 State::Uninitialized => {
                     trace!("token is uninitialized");
-                    self.state = State::Fetching { retry: 0, fut: Box::pin(self.source.token()) };
+                    self.state = State::Fetching { retry: 0, fut: RefGuard::new(Box::pin(self.source.token())) };
                     continue;
                 }
-                State::Fetching { ref retry, ref mut fut } => match fut.as_mut().poll(cx) {
+                State::Fetching { ref retry, ref mut fut } => match fut.get_mut().as_mut().poll(cx) {
                     Poll::Ready(r) => match r.and_then(|t| t.into_pairs()) {
                         Ok((value, expiry)) => {
                             self.cache = Some(Cache::new(value, expiry));
@@ -93,7 +105,7 @@ impl Inner {
                             }
                             self.state = State::Fetching {
                                 retry: retry + 1,
-                                fut: Box::pin(self.source.token()),
+                                fut: RefGuard::new(Box::pin(self.source.token())),
                             };
                             continue;
                         }
@@ -106,7 +118,7 @@ impl Inner {
                         return Poll::Ready(());
                     }
                     trace!("token will expire: expiry={:?}", cache.expiry);
-                    self.state = State::Fetching { retry: 0, fut: Box::pin(self.source.token()) };
+                    self.state = State::Fetching { retry: 0, fut: RefGuard::new(Box::pin(self.source.token())) };
                     continue;
                 }
             }
