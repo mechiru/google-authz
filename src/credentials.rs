@@ -227,6 +227,7 @@ mod test {
   "refresh_token": "refresh-xxx",
   "type": "authorized_user"
 }"#;
+
     #[test]
     fn test_from_json() -> Result<()> {
         assert_eq!(from_json(SA, &[])?, Credentials {
