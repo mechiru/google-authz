@@ -40,6 +40,10 @@ enum State {
     Fetched(Cache),
 }
 
+// To read/write `State.Fetching` variant, use RwLock::write to access it.
+unsafe impl Send for State {}
+unsafe impl Sync for State {}
+
 struct Inner {
     state: State,
     source: TokenSource,
@@ -164,6 +168,54 @@ impl<S: fmt::Debug> fmt::Debug for AddAuthorization<S> {
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn compile_test() {
+        #[derive(Clone)]
+        struct Counter {
+            cur: i32,
+        }
+
+        impl Counter {
+            fn new() -> Self {
+                Counter { cur: 0 }
+            }
+        }
+
+        impl<B> tower_service::Service<Request<B>> for Counter {
+            type Response = i32;
+            type Error = i32;
+            type Future = Pin<Box<dyn Future<Output = Result<i32, i32>> + Send + 'static>>;
+
+            fn poll_ready(&mut self, _: &mut task::Context<'_>) -> Poll<Result<(), Self::Error>> {
+                Poll::Ready(Ok(()))
+            }
+
+            fn call(&mut self, _: Request<B>) -> Self::Future {
+                self.cur += 1;
+                let current = self.cur;
+                Box::pin(async move { Ok(current) })
+            }
+        }
+
+        fn assert_send<T: Send>(_: T) {}
+        fn assert_sync<T: Sync>(_: T) {}
+
+        let svc = AddAuthorization::init_with(
+            Credentials::from_json(
+                br#"{
+  "client_id": "xxx.apps.googleusercontent.com",
+  "client_secret": "secret-xxx",
+  "refresh_token": "refresh-xxx",
+  "type": "authorized_user"
+}"#,
+                &[],
+            ),
+            Counter::new(),
+        );
+        assert_send(svc.clone());
+        assert_sync(svc);
+    }
 
     #[test]
     fn cache_expiry() {
