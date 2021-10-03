@@ -86,10 +86,12 @@ impl Inner {
             match self.state {
                 State::Uninitialized => {
                     trace!("token is uninitialized");
-                    self.state = State::Fetching { retry: 0, fut: RefGuard::new(Box::pin(self.source.token())) };
+                    self.state =
+                        State::Fetching { retry: 0, fut: RefGuard::new(self.source.token()) };
                     continue;
                 }
-                State::Fetching { ref retry, ref mut fut } => match fut.get_mut().as_mut().poll(cx) {
+                State::Fetching { ref retry, ref mut fut } => match fut.get_mut().as_mut().poll(cx)
+                {
                     Poll::Ready(r) => match r.and_then(|t| t.into_pairs()) {
                         Ok((value, expiry)) => {
                             self.cache = Some(Cache::new(value, expiry));
@@ -105,7 +107,7 @@ impl Inner {
                             }
                             self.state = State::Fetching {
                                 retry: retry + 1,
-                                fut: RefGuard::new(Box::pin(self.source.token())),
+                                fut: RefGuard::new(self.source.token()),
                             };
                             continue;
                         }
@@ -118,7 +120,8 @@ impl Inner {
                         return Poll::Ready(());
                     }
                     trace!("token will expire: expiry={:?}", cache.expiry);
-                    self.state = State::Fetching { retry: 0, fut: RefGuard::new(Box::pin(self.source.token())) };
+                    self.state =
+                        State::Fetching { retry: 0, fut: RefGuard::new(self.source.token()) };
                     continue;
                 }
             }
