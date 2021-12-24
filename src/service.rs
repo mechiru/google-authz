@@ -99,6 +99,7 @@ where
 {
     type Response = S::Response;
     type Error = Error<S::Error>;
+    #[allow(clippy::type_complexity)]
     type Future = Either<
         MapErr<S::Future, fn(S::Error) -> Self::Error>,
         Ready<Result<Self::Response, Self::Error>>,
