@@ -39,6 +39,7 @@ struct Payload<'a> {
     assertion: &'a str,
 }
 
+// https://cloud.google.com/docs/authentication/production
 pub struct ServiceAccount {
     inner: Client,
     header: Header,

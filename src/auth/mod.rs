@@ -42,6 +42,7 @@ impl From<Credentials> for Inner {
     }
 }
 
+// https://cloud.google.com/docs/authentication
 #[derive(Clone, Debug)]
 pub(crate) struct Auth {
     inner: Inner,

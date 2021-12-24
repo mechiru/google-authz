@@ -2,6 +2,7 @@ use std::{convert::TryFrom as _, fmt};
 
 use hyper::{http::uri::PathAndQuery, Request, Uri};
 
+// https://cloud.google.com/docs/authentication/api-keys
 #[derive(Clone)]
 pub(super) struct ApiKey {
     value: String,

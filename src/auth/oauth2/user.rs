@@ -15,6 +15,7 @@ struct Payload<'a> {
     refresh_token: &'a str,
 }
 
+// https://cloud.google.com/docs/authentication/end-user
 pub struct User {
     inner: Client,
     token_uri: Uri,
