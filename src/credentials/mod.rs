@@ -108,18 +108,12 @@ impl<'a> Builder<'a> {
         self
     }
 
-    pub fn json<'b>(mut self, data: &'b [u8]) -> Self
-    where
-        'b: 'a,
-    {
+    pub fn json<'b: 'a>(mut self, data: &'b [u8]) -> Self {
         self.source = Source::Json { data };
         self
     }
 
-    pub fn json_file<'b>(mut self, path: &'b Path) -> Self
-    where
-        'b: 'a,
-    {
+    pub fn json_file<'b: 'a>(mut self, path: &'b Path) -> Self {
         self.source = Source::JsonFile { path };
         self
     }
