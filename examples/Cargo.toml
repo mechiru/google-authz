@@ -2,25 +2,18 @@
 name = "examples"
 version = "0.1.0"
 authors = ["mechiru <u9053u6d41@gmail.com>"]
-edition = "2018"
+edition = "2021"
 
 [dependencies]
-tracing-subscriber = { version = "0.2" }
-tokio = { version = "1.5", features = ["macros", "rt-multi-thread"] }
-google-authz = { path = "../", features = ["client"] }
+tracing-subscriber = { version = "0.3" }
+tokio = { version = "1.15", features = ["macros", "rt-multi-thread"] }
+google-authz = { path = "../" }
 # grpc + gcp
-tonic = { version = "0.4", features = ["tls"] }
-prost = { version = "0.7" }
-prost-types = { version = "0.7" }
-googapis = { version = "0.4", features = ["google-pubsub-v1"] }
-# hyper
-hyper = { version = "0.14", default-features = false, features = ["client", "http1", "http2"] }
-hyper-rustls = { version = "0.22" }
+tonic = { version = "0.6", features = ["tls", "tls-webpki-roots"] }
+prost = { version = "0.9" }
+prost-types = { version = "0.9" }
+google-api-proto = { path = "../../google-api-proto/google-api-proto", features = ["google-pubsub-v1"] }
 
 [[bin]]
 name = "tonic"
 path = "src/tonic.rs"
-
-[[bin]]
-name = "hyper"
-path = "src/hyper.rs"

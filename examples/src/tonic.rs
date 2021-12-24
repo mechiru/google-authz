@@ -1,41 +1,26 @@
-use std::{env, error::Error};
+use std::env;
 
-use googapis::{
-    google::pubsub::v1::{publisher_client::PublisherClient, ListTopicsRequest},
-    CERTIFICATES,
-};
-use google_authz::AddAuthorization;
-use tonic::{
-    transport::{Certificate, Channel, ClientTlsConfig},
-    Request,
-};
+use google_api_proto::google::pubsub::v1::{publisher_client::PublisherClient, ListTopicsRequest};
+use google_authz::GoogleAuthz;
+use tonic::{transport::Channel, Request};
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
 
     let project = env::args().nth(1).expect("cargo run --bin tonic -- <GCP_PROJECT_ID>");
-
-    let tls_config = ClientTlsConfig::new()
-        .ca_certificate(Certificate::from_pem(CERTIFICATES))
-        .domain_name("pubsub.googleapis.com");
-
-    let channel = Channel::from_static("https://pubsub.googleapis.com")
-        .tls_config(tls_config)?
-        .connect()
-        .await?;
-
-    let channel = AddAuthorization::init(channel).await;
+    let channel = Channel::from_static("https://pubsub.googleapis.com").connect().await?;
+    let channel = GoogleAuthz::builder(channel).with_tonic(true).build().await;
 
     let mut client = PublisherClient::new(channel);
-    let resp = client
+    let response = client
         .list_topics(Request::new(ListTopicsRequest {
             project: format!("projects/{}", project),
             page_size: 10,
             ..Default::default()
         }))
         .await?;
-    println!("response = {:?}", resp);
+    println!("response = {:#?}", response);
 
     Ok(())
 }

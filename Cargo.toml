@@ -1,10 +1,10 @@
 [package]
 name = "google-authz"
-version = "0.0.2"
+version = "1.0.0-alpha.1"
 authors = ["mechiru <u9053u6d41@gmail.com>"]
 edition = "2018"
 license = "MIT OR Apache-2.0"
-description = "This library provides auto-renewed tokens for GCP service authentication."
+description = "This library provides auto-renewed tokens for Google service authentication."
 repository = "https://github.com/mechiru/google-authz"
 documentation = "https://docs.rs/google-authz"
 categories = ["authentication"]
@@ -24,7 +24,7 @@ members = ["examples"]
 tracing = { version = "0.1", default-features = false, features = ["std"] }
 thiserror = { version = "1.0" }
 parking_lot = { version = "0.11" }
-futures-util = { version = "0.3", optional = true }
+futures-util = { version = "0.3" }
 bytes = { version = "1.1" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0" }
@@ -33,11 +33,9 @@ jsonwebtoken = { version = "7.2" }
 gcemeta = { version = "0.2" }
 tower-service = { version = "0.3" }
 hyper = { version = "0.14", features = ["client", "http2"] }
-hyper-rustls = { version = "0.22", default-features = false, optional = true }
+hyper-rustls = { version = "0.23", default-features = false, features = ["http2"], optional = true }
 
 [features]
-default = ["service", "native-certs"]
-service = []
-client = ["service", "futures-util"]
+default = ["native-certs"]
 native-certs = ["hyper-rustls/native-tokio"]
 webpki-roots = ["hyper-rustls/webpki-tokio"]

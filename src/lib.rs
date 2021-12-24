@@ -1,15 +1,8 @@
+mod auth;
 mod credentials;
-mod token;
+mod service;
+mod sync;
 
-pub use credentials::Credentials;
-pub use token::{Token, TokenSource};
-
-#[cfg(feature = "client")]
-pub mod client;
-#[cfg(feature = "client")]
-pub use client::Client;
-
-#[cfg(feature = "service")]
-pub mod service;
-#[cfg(feature = "service")]
-pub use service::AddAuthorization;
+pub use auth::Error as AuthError;
+pub use credentials::{Credentials, Error as CredentialsError};
+pub use service::{Error, GoogleAuthz};
