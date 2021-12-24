@@ -9,12 +9,12 @@ This library provides auto-renewed tokens for GCP service authentication.<br>
 
 ## Notes
 
-| Authentication flow                  | Status                              |
-|--------------------------------------|-------------------------------------|
-| API key                              | Not supported / No plans to support |
-| OAuth 2.0 client                     | Supported                           |
-| Environment-provided service account | Supported                           |
-| Service account key                  | Supported                           |
+| Authentication flow                  | Status    |
+|--------------------------------------|-----------|
+| API key                              | Supported |
+| OAuth 2.0 client                     | Supported |
+| Environment-provided service account | Supported |
+| Service account key                  | Supported |
 
 
 ## Example
@@ -28,63 +28,78 @@ This library provides auto-renewed tokens for GCP service authentication.<br>
   - On Google Compute Engine, it fetches credentials from the metadata server.
 
 ```rust
-let creds = Credentials::default().await;
-let service = AddAuthorization::init_with(creds, service);
+use google_authz::{Credentials, GoogleAuthz};
+
+let credentials = Credentials::builder().build().await.unwrap();
+let service = GoogleAuthz::builder(service).credentials(credentials).build().await;
 
 // same as above
-let service = AddAuthorization::init(service).await;
+let service = GoogleAuthz::new(service).await;
 ```
+
 
 
 ### Custom
 
-scope:
+no auth:
 ```rust
-let creds = Credentials::find_default(scopes).await;
-let service = AddAuthorization::init_with(creds, service);
+let credentials = Credentials::builder().no_credentials().build().await.unwrap();
+let service = GoogleAuthz::builder(service).credentials(credentials).build().await;
+```
+
+api key:
+```rust
+let credentials = Credentials::builder().api_key(api_key).build().await.unwrap();
+let service = GoogleAuthz::builder(service).credentials(credentials).build().await;
 ```
 
 json:
 ```rust
-let creds = Credentials::from_json(json, scopes);
-let service = AddAuthorization::init_with(creds, service);
+let credentials = Credentials::builder().json(json).build().await.unwrap();
+let service = GoogleAuthz::builder(service).credentials(credentials).build().await;
 ```
 
-file:
+json file:
 ```rust
-let creds = Credentials::from_file(path, scopes);
-let service = AddAuthorization::init_with(creds, 
+let credentials = Credentials::builder().json_file(json_file).build().await.unwrap();
+let service = GoogleAuthz::builder(service).credentials(credentials).build().await;
 ```
+
+metadata:
+```rust
+let credentials = Credentials::builder().metadata(None).build().await.unwrap();
+let service = GoogleAuthz::builder(service).credentials(credentials).build().await;
+```
+
+scope:
+```rust
+let credentials = Credentials::builder().scopes(scopes).build().await.unwrap();
+let service = GoogleAuthz::builder(service).credentials(credentials).build().await;
+```
+
 
 ### with [tonic](github.com/hyperium/tonic)
 
+**When using with tonic crate, set `with_tonic` of service builder to `true`.**
+
 ```rust
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
 
     let project = env::args().nth(1).expect("cargo run --bin tonic -- <GCP_PROJECT_ID>");
-
-    let tls_config = ClientTlsConfig::new()
-        .ca_certificate(Certificate::from_pem(CERTIFICATES))
-        .domain_name("pubsub.googleapis.com");
-
-    let channel = Channel::from_static("https://pubsub.googleapis.com")
-        .tls_config(tls_config)?
-        .connect()
-        .await?;
-
-    let channel = AddAuthorization::init(channel).await;
+    let channel = Channel::from_static("https://pubsub.googleapis.com").connect().await?;
+    let channel = GoogleAuthz::builder(channel).with_tonic(true).build().await; // important!
 
     let mut client = PublisherClient::new(channel);
-    let resp = client
+    let response = client
         .list_topics(Request::new(ListTopicsRequest {
             project: format!("projects/{}", project),
             page_size: 10,
             ..Default::default()
         }))
         .await?;
-    println!("response = {:?}", resp);
+    println!("response = {:#?}", response);
 
     Ok(())
 }
@@ -92,34 +107,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
 The complete code can be found [here](./examples/src/tonic.rs).
 
-### with [hyper](https://github.com/hyperium/hyper)
-
-```rust
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
-    tracing_subscriber::fmt::init();
-
-    let project = env::args().nth(1).expect("cargo run --bin hyper -- <GCP_PROJECT_ID>");
-
-    let https = HttpsConnector::with_native_roots();
-    let client = hyper::Client::builder().build::<_, Body>(https);
-    let mut client = Client::new(client).await;
-
-    let uri = Uri::try_from(format!(
-        "https://pubsub.googleapis.com/v1/projects/{}/topics?alt=json&prettyPrint=true",
-        project
-    ))?;
-    let (parts, body) = client.get(uri).await?.into_parts();
-    println!("response parts = {:?}", parts);
-
-    let body = String::from_utf8(to_bytes(body).await?.to_vec())?;
-    println!("resposne body = `{}`", body);
-
-    Ok(())
-}
-```
-
-The complete code can be found [here](./examples/src/hyper.rs).
 
 
 ## License
