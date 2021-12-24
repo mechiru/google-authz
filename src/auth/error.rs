@@ -11,6 +11,7 @@ pub enum Error {
     JsonDeserialize(serde_json::Error),
     #[error("token format error: {0:?}")]
     TokenFormat(crate::auth::oauth2::token::Response),
+    #[cfg(not(feature = "tonic"))]
     #[error("uri schema error: {0:?}")]
     EnforceHttps(Option<String>),
 }

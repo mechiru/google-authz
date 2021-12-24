@@ -37,5 +37,6 @@ hyper-rustls = { version = "0.23", default-features = false, features = ["http2"
 
 [features]
 default = ["native-certs"]
+tonic = []
 native-certs = ["hyper-rustls/native-tokio"]
 webpki-roots = ["hyper-rustls/webpki-tokio"]

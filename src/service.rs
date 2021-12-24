@@ -37,11 +37,6 @@ impl Builder<()> {
 }
 
 impl<S> Builder<S> {
-    pub fn with_tonic(mut self, with_tonic: bool) -> Self {
-        self.config.with_tonic = with_tonic;
-        self
-    }
-
     pub fn enforce_https(mut self, enforce_https: bool) -> Self {
         self.config.enforce_https = enforce_https;
         self

@@ -80,7 +80,7 @@ let service = GoogleAuthz::builder(service).credentials(credentials).build().awa
 
 ### with [tonic](github.com/hyperium/tonic)
 
-**When using with tonic crate, set `with_tonic` of service builder to `true`.**
+**When using with tonic crate, please enable the `tonic` feature.**
 
 ```rust
 #[tokio::main]
@@ -89,7 +89,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let project = env::args().nth(1).expect("cargo run --bin tonic -- <GCP_PROJECT_ID>");
     let channel = Channel::from_static("https://pubsub.googleapis.com").connect().await?;
-    let channel = GoogleAuthz::builder(channel).with_tonic(true).build().await; // important!
+    let channel = GoogleAuthz::new(channel).await;
 
     let mut client = PublisherClient::new(channel);
     let response = client

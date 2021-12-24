@@ -13,13 +13,12 @@ use oauth2::{Metadata, Oauth2, ServiceAccount, User};
 
 #[derive(Clone, Debug)]
 pub(crate) struct Config {
-    pub with_tonic: bool,
     pub enforce_https: bool,
 }
 
 impl Default for Config {
     fn default() -> Self {
-        Self { with_tonic: false, enforce_https: true }
+        Self { enforce_https: true }
     }
 }
 
@@ -64,7 +63,8 @@ impl Auth {
 
     #[inline]
     pub fn call<B>(&self, req: Request<B>) -> Result<Request<B>> {
-        if !self.config.with_tonic && self.config.enforce_https {
+        #[cfg(not(feature = "tonic"))]
+        if self.config.enforce_https {
             check_https(req.uri().scheme_str())?;
         }
 
@@ -77,6 +77,7 @@ impl Auth {
 }
 
 #[inline]
+#[cfg(not(feature = "tonic"))]
 fn check_https(scheme: Option<&'_ str>) -> Result<()> {
     match scheme {
         Some("https") => Ok(()),
