@@ -7,7 +7,7 @@ spec:
     spec:
       containers:
       - name: google-authz-example
-        image: mechiru/google-authz-example:v0.0.1
+        image: mechiru/google-authz-example:v1.0.0-alpha.1
         env:
           - name: RUST_LOG
             value: "google_authz=trace"
