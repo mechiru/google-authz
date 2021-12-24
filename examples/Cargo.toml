@@ -5,14 +5,14 @@ authors = ["mechiru <u9053u6d41@gmail.com>"]
 edition = "2021"
 
 [dependencies]
-tracing-subscriber = { version = "0.3" }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tokio = { version = "1.15", features = ["macros", "rt-multi-thread"] }
 google-authz = { path = "../" }
 # grpc + gcp
 tonic = { version = "0.6", features = ["tls", "tls-webpki-roots"] }
 prost = { version = "0.9" }
 prost-types = { version = "0.9" }
-google-api-proto = { path = "../../google-api-proto/google-api-proto", features = ["google-pubsub-v1"] }
+google-api-proto = { git = "https://github.com/mechiru/google-api-proto", features = ["google-pubsub-v1"] }
 
 [[bin]]
 name = "tonic"
