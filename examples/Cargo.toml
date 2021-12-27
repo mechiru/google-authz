@@ -12,7 +12,7 @@ google-authz = { path = "../", features = ["tonic"] }
 tonic = { version = "0.6", features = ["tls", "tls-webpki-roots"] }
 prost = { version = "0.9" }
 prost-types = { version = "0.9" }
-google-api-proto = { git = "https://github.com/mechiru/google-api-proto", features = ["google-pubsub-v1"] }
+google-api-proto = { version = "1.0.0-alpha.1", features = ["google-pubsub-v1"] }
 
 [[bin]]
 name = "tonic"
