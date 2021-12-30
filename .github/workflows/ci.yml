@@ -26,6 +26,7 @@ jobs:
         override: true
         profile: minimal
         components: clippy
-    - run: cargo clippy --all-targets -- -D warnings
-    - run: cargo build -v
-    - run: cargo test -v
+    - run: cargo build --all-features
+    - run: cargo test --all-features
+    # - run: cargo fmt --all -- --check
+    - run: cargo clippy --all-targets --all-features -- --deny warnings
