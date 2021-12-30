@@ -1,8 +1,9 @@
 # google-authz
 
 [![ci](https://github.com/mechiru/google-authz/workflows/ci/badge.svg)](https://github.com/mechiru/google-authz/actions?query=workflow:ci)
-[![Rust Documentation](https://docs.rs/google-authz/badge.svg)](https://docs.rs/google-authz)
-[![Latest Version](https://img.shields.io/crates/v/google-authz.svg)](https://crates.io/crates/google-authz)
+[![pub](https://github.com/mechiru/google-authz/workflows/pub/badge.svg)](https://github.com/mechiru/google-authz/actions?query=workflow:pub)
+[![doc](https://docs.rs/google-authz/badge.svg)](https://docs.rs/google-authz)
+[![version](https://img.shields.io/crates/v/google-authz.svg)](https://crates.io/crates/google-authz)
 
 This library provides auto-renewed tokens for GCP service authentication.<br>
 **google-authz = tower-service + gcp authentication**
