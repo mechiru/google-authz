@@ -68,7 +68,7 @@ fn connection_builder() -> HttpsConnectorBuilder<WantsSchemes> {
     HttpsConnectorBuilder::new().with_native_roots()
 }
 
-#[cfg(feature = "webpki-roots")]
+#[cfg(all(not(feature = "native-certs"), feature = "webpki-roots"))]
 fn connection_builder() -> HttpsConnectorBuilder<WantsSchemes> {
     HttpsConnectorBuilder::new().with_webpki_roots()
 }

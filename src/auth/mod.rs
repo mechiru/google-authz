@@ -13,12 +13,16 @@ use oauth2::{Metadata, Oauth2, ServiceAccount, User};
 
 #[derive(Clone, Debug)]
 pub(crate) struct Config {
+    #[cfg(not(feature = "tonic"))]
     pub enforce_https: bool,
 }
 
 impl Default for Config {
     fn default() -> Self {
-        Self { enforce_https: true }
+        Self {
+            #[cfg(not(feature = "tonic"))]
+            enforce_https: true,
+        }
     }
 }
 

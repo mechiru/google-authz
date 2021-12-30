@@ -37,6 +37,7 @@ impl Builder<()> {
 }
 
 impl<S> Builder<S> {
+    #[cfg(not(feature = "tonic"))]
     pub fn enforce_https(mut self, enforce_https: bool) -> Self {
         self.config.enforce_https = enforce_https;
         self
