@@ -43,6 +43,11 @@ impl<S> Builder<S> {
         self
     }
 
+    pub fn max_retry(mut self, max_retry: u8) -> Self {
+        self.config.max_retry = max_retry;
+        self
+    }
+
     pub fn credentials(mut self, credentials: impl Into<Option<Credentials>>) -> Self {
         self.credentials = credentials.into();
         self

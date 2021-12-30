@@ -1,5 +1,5 @@
 use std::{
-    convert::TryInto,
+    convert::TryFrom as _,
     fmt,
     sync::Arc,
     task::{self, Poll},
@@ -11,7 +11,7 @@ use hyper::{
     Request,
 };
 use parking_lot::RwLock;
-use tracing::trace;
+use tracing::{info, trace};
 
 use crate::{auth, sync::RefGuard};
 
@@ -32,15 +32,9 @@ pub(super) struct Oauth2 {
 }
 
 impl Oauth2 {
-    pub fn new<T>(fetcher: T) -> Self
-    where
-        T: token::Fetcher,
-    {
+    pub fn new(fetcher: Box<dyn token::Fetcher>, max_retry: u8) -> Self {
         Self {
-            inner: Arc::new(RwLock::new(Inner {
-                state: State::NotFetched,
-                fetcher: Box::new(fetcher),
-            })),
+            inner: Arc::new(RwLock::new(Inner { state: State::NotFetched, fetcher, max_retry })),
         }
     }
 
@@ -67,6 +61,7 @@ impl fmt::Debug for Oauth2 {
 struct Inner {
     state: State,
     fetcher: Box<dyn token::Fetcher>,
+    max_retry: u8,
 }
 
 impl Inner {
@@ -77,18 +72,34 @@ impl Inner {
 
     #[inline]
     fn poll_ready(&mut self, cx: &mut task::Context<'_>) -> Poll<auth::Result<()>> {
-        macro_rules! poll_future {
-            ($future:expr) => {
+        macro_rules! poll {
+            ($variant:ident, $future:expr, $attempts:ident) => {
+                poll!($variant, $future, $attempts,)
+            };
+            ($variant:ident, $future:expr, $attempts:ident, $($field:ident),*) => {
                 match $future.get_mut().as_mut().poll(cx) {
-                    Poll::Ready(resp) => match resp.and_then(TryInto::<token::Token>::try_into) {
+                    Poll::Ready(resp) => match resp.and_then(token::Token::try_from) {
                         Ok(token) => {
                             trace!("fetched token: expiry={:?}", token.expiry);
                             self.state = State::Fetched { current: token };
-                            return Poll::Ready(Ok(()));
+                            break Poll::Ready(Ok(()));
                         }
-                        Err(err) => return Poll::Ready(Err(err)),
+                        Err(err) => {
+                            if $attempts > self.max_retry {
+                                break Poll::Ready(Err(err));
+                            }
+                            info!("an error occurred during token fetching: attempts={}, err={:?}", $attempts, err);
+                            self.state = State::$variant {
+                                future: RefGuard::new(self.fetcher.fetch()),
+                                attempts: $attempts + 1,
+                                $(
+                                    $field: $field.clone(),
+                                )*
+                            };
+                            break Poll::Pending;
+                        }
                     },
-                    Poll::Pending => return Poll::Pending,
+                    Poll::Pending => break Poll::Pending,
                 }
             };
         }
@@ -97,18 +108,24 @@ impl Inner {
             match self.state {
                 State::NotFetched => {
                     trace!("token is not fetched");
-                    self.state = State::Fetching { future: RefGuard::new(self.fetcher.fetch()) };
+                    self.state = State::Fetching {
+                        future: RefGuard::new(self.fetcher.fetch()),
+                        attempts: 1,
+                    };
                     continue;
                 }
-                State::Fetching { ref mut future } => poll_future!(future),
-                State::Refetching { ref mut future, .. } => poll_future!(future),
+                State::Fetching { ref mut future, attempts } => poll!(Fetching, future, attempts),
+                State::Refetching { ref mut future, attempts, ref last } => {
+                    poll!(Refetching, future, attempts, last)
+                }
                 State::Fetched { ref current } => {
                     if !current.expired(Instant::now()) {
-                        return Poll::Ready(Ok(()));
+                        break Poll::Ready(Ok(()));
                     }
                     trace!("token will expire: expiry={:?}", current.expiry);
                     self.state = State::Refetching {
                         future: RefGuard::new(self.fetcher.fetch()),
+                        attempts: 1,
                         last: current.clone(),
                     };
                     continue;
@@ -129,14 +146,18 @@ impl Inner {
 
 impl fmt::Debug for Inner {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Inner").field("state", &self.state).field("fetcher", &self.fetcher).finish()
+        f.debug_struct("Inner")
+            .field("state", &self.state)
+            .field("fetcher", &self.fetcher)
+            .field("max_retry", &self.max_retry)
+            .finish()
     }
 }
 
 enum State {
     NotFetched,
-    Fetching { future: RefGuard<token::ResponseFuture> },
-    Refetching { future: RefGuard<token::ResponseFuture>, last: token::Token },
+    Fetching { future: RefGuard<token::ResponseFuture>, attempts: u8 },
+    Refetching { future: RefGuard<token::ResponseFuture>, attempts: u8, last: token::Token },
     Fetched { current: token::Token },
 }
 

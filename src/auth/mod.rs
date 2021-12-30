@@ -9,12 +9,13 @@ mod error;
 mod oauth2;
 
 pub use error::*;
-use oauth2::{Metadata, Oauth2, ServiceAccount, User};
+use oauth2::{token::Fetcher, Metadata, Oauth2, ServiceAccount, User};
 
 #[derive(Clone, Debug)]
 pub(crate) struct Config {
     #[cfg(not(feature = "tonic"))]
     pub enforce_https: bool,
+    pub max_retry: u8,
 }
 
 impl Default for Config {
@@ -22,6 +23,7 @@ impl Default for Config {
         Self {
             #[cfg(not(feature = "tonic"))]
             enforce_https: true,
+            max_retry: 3,
         }
     }
 }
@@ -33,15 +35,16 @@ enum Inner {
     Oauth2(oauth2::Oauth2),
 }
 
-impl From<Credentials> for Inner {
-    fn from(credentials: Credentials) -> Self {
-        match credentials {
-            Credentials::None => Self::None,
-            Credentials::ApiKey(key) => Self::ApiKey(api_key::ApiKey::new(key)),
-            Credentials::User(user) => Self::Oauth2(Oauth2::new(User::new(user))),
-            Credentials::ServiceAccount(sa) => Self::Oauth2(Oauth2::new(ServiceAccount::new(sa))),
-            Credentials::Metadata(meta) => Self::Oauth2(Oauth2::new(Metadata::new(meta))),
-        }
+impl From<(Credentials, &Config)> for Inner {
+    fn from((credentials, config): (Credentials, &Config)) -> Self {
+        let fetcher: Box<dyn Fetcher> = match credentials {
+            Credentials::None => return Self::None,
+            Credentials::ApiKey(key) => return Self::ApiKey(api_key::ApiKey::new(key)),
+            Credentials::User(user) => Box::new(User::new(user)),
+            Credentials::ServiceAccount(sa) => Box::new(ServiceAccount::new(sa)),
+            Credentials::Metadata(meta) => Box::new(Metadata::new(meta)),
+        };
+        Self::Oauth2(Oauth2::new(fetcher, config.max_retry))
     }
 }
 
@@ -49,12 +52,17 @@ impl From<Credentials> for Inner {
 #[derive(Clone, Debug)]
 pub(crate) struct Auth {
     inner: Inner,
-    config: Config,
+    #[cfg(not(feature = "tonic"))]
+    enforce_https: bool,
 }
 
 impl Auth {
     pub fn new(credentials: Credentials, config: Config) -> Self {
-        Self { inner: credentials.into(), config }
+        Self {
+            inner: (credentials, &config).into(),
+            #[cfg(not(feature = "tonic"))]
+            enforce_https: config.enforce_https,
+        }
     }
 
     #[inline]
@@ -68,7 +76,7 @@ impl Auth {
     #[inline]
     pub fn call<B>(&self, req: Request<B>) -> Result<Request<B>> {
         #[cfg(not(feature = "tonic"))]
-        if self.config.enforce_https {
+        if self.enforce_https {
             check_https(req.uri().scheme_str())?;
         }
 
