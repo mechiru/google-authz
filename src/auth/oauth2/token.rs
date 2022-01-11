@@ -53,6 +53,6 @@ impl TryFrom<Response> for Token {
 
 pub(crate) type ResponseFuture = BoxFuture<'static, auth::Result<Response>>;
 
-pub(crate) trait Fetcher: fmt::Debug + 'static {
+pub(crate) trait Fetcher: fmt::Debug + Send + Sync + 'static {
     fn fetch(&self) -> ResponseFuture;
 }

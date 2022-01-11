@@ -126,3 +126,37 @@ where
         }
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_compile() {
+        fn assert_send<T: Send>(_: &T) {}
+        fn assert_sync<T: Sync>(_: &T) {}
+
+        #[derive(Clone)]
+        struct Counter(i32);
+
+        impl tower_service::Service<Request<hyper::Body>> for Counter {
+            type Response = i32;
+            type Error = i32;
+            type Future = futures_util::future::BoxFuture<'static, Result<i32, i32>>;
+
+            fn poll_ready(&mut self, _: &mut task::Context<'_>) -> Poll<Result<(), Self::Error>> {
+                Poll::Ready(Ok(()))
+            }
+
+            fn call(&mut self, _: Request<hyper::Body>) -> Self::Future {
+                self.0 += 1;
+                let current = self.0;
+                Box::pin(async move { Ok(current) })
+            }
+        }
+
+        let svc = GoogleAuthz::new(Counter(0)).await;
+        assert_send(&svc);
+        assert_sync(&svc);
+    }
+}

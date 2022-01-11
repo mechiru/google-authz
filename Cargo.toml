@@ -35,6 +35,9 @@ tower-service = { version = "0.3" }
 hyper = { version = "0.14", features = ["client", "http2"] }
 hyper-rustls = { version = "0.23", default-features = false, features = ["http2"], optional = true }
 
+[dev-dependencies]
+tokio = { version = "1.15", features = ["macros"] }
+
 [features]
 default = ["native-certs"]
 tonic = []
