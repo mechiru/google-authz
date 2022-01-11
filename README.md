@@ -5,8 +5,8 @@
 [![doc](https://docs.rs/google-authz/badge.svg)](https://docs.rs/google-authz)
 [![version](https://img.shields.io/crates/v/google-authz.svg)](https://crates.io/crates/google-authz)
 
-This library provides auto-renewed tokens for GCP service authentication.<br>
-**google-authz = tower-service + gcp authentication**
+This library provides auto-renewed tokens for Google service authentication.<br>
+**google-authz = tower-service + google authentication**
 
 ## Notes
 
