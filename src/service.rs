@@ -37,17 +37,20 @@ impl Builder<()> {
 }
 
 impl<S> Builder<S> {
+    #[must_use]
     #[cfg(not(feature = "tonic"))]
     pub fn enforce_https(mut self, enforce_https: bool) -> Self {
         self.config.enforce_https = enforce_https;
         self
     }
 
+    #[must_use]
     pub fn max_retry(mut self, max_retry: u8) -> Self {
         self.config.max_retry = max_retry;
         self
     }
 
+    #[must_use]
     pub fn credentials(mut self, credentials: impl Into<Option<Credentials>>) -> Self {
         self.credentials = credentials.into();
         self

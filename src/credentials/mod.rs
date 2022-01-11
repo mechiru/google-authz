@@ -98,31 +98,37 @@ impl<'a> Builder<'a> {
         Self::default()
     }
 
+    #[must_use]
     pub fn no_credentials(mut self) -> Self {
         self.source = Source::None;
         self
     }
 
+    #[must_use]
     pub fn api_key(mut self, key: impl Into<String>) -> Self {
         self.source = Source::ApiKey { key: key.into() };
         self
     }
 
+    #[must_use]
     pub fn json<'b: 'a>(mut self, data: &'b [u8]) -> Self {
         self.source = Source::Json { data };
         self
     }
 
+    #[must_use]
     pub fn json_file<'b: 'a>(mut self, path: &'b Path) -> Self {
         self.source = Source::JsonFile { path };
         self
     }
 
+    #[must_use]
     pub fn metadata(mut self, account: impl Into<Option<String>>) -> Self {
         self.source = Source::Metadata { account: account.into() };
         self
     }
 
+    #[must_use]
     pub fn scopes(mut self, scopes: &'static [&'static str]) -> Self {
         self.scopes = scopes;
         self
