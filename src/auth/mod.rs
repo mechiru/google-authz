@@ -37,7 +37,7 @@ enum Inner {
 
 impl From<(Credentials, &Config)> for Inner {
     fn from((credentials, config): (Credentials, &Config)) -> Self {
-        let fetcher: Box<dyn Fetcher> = match credentials {
+        let fetcher: Box<dyn Fetcher + Send + Sync> = match credentials {
             Credentials::None => return Self::None,
             Credentials::ApiKey(key) => return Self::ApiKey(api_key::ApiKey::new(key)),
             Credentials::User(user) => Box::new(User::new(user)),

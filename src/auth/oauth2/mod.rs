@@ -32,7 +32,7 @@ pub(super) struct Oauth2 {
 }
 
 impl Oauth2 {
-    pub fn new(fetcher: Box<dyn token::Fetcher>, max_retry: u8) -> Self {
+    pub fn new(fetcher: Box<dyn token::Fetcher + Send + Sync>, max_retry: u8) -> Self {
         Self {
             inner: Arc::new(RwLock::new(Inner { state: State::NotFetched, fetcher, max_retry })),
         }
@@ -60,7 +60,7 @@ impl fmt::Debug for Oauth2 {
 
 struct Inner {
     state: State,
-    fetcher: Box<dyn token::Fetcher>,
+    fetcher: Box<dyn token::Fetcher + Send + Sync>,
     max_retry: u8,
 }
 
