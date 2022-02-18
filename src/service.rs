@@ -158,7 +158,8 @@ mod test {
             }
         }
 
-        let svc = GoogleAuthz::new(Counter(0)).await;
+        let credentials = Credentials::builder().no_credentials().build().await.unwrap();
+        let svc = GoogleAuthz::builder(Counter(0)).credentials(credentials).build();
         assert_send(&svc);
         assert_sync(&svc);
     }
