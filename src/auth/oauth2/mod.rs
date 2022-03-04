@@ -96,10 +96,14 @@ impl Inner {
                                     $field: $field.clone(),
                                 )*
                             };
+                            cx.waker().wake_by_ref();
                             break Poll::Pending;
                         }
                     },
-                    Poll::Pending => break Poll::Pending,
+                    Poll::Pending => {
+                        cx.waker().wake_by_ref();
+                        break Poll::Pending;
+                    }
                 }
             };
         }
