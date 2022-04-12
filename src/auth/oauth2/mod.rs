@@ -96,7 +96,6 @@ impl Inner {
                                     $field: $field.clone(),
                                 )*
                             };
-                            break Poll::Pending;
                         }
                     },
                     Poll::Pending => break Poll::Pending,
@@ -112,7 +111,6 @@ impl Inner {
                         future: RefGuard::new(self.fetcher.fetch()),
                         attempts: 1,
                     };
-                    continue;
                 }
                 State::Fetching { ref mut future, attempts } => poll!(Fetching, future, attempts),
                 State::Refetching { ref mut future, attempts, ref last } => {
@@ -128,7 +126,6 @@ impl Inner {
                         attempts: 1,
                         last: current.clone(),
                     };
-                    continue;
                 }
             }
         }
