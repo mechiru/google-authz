@@ -27,7 +27,7 @@ impl Credentials {
     }
 }
 
-#[cfg_attr(test, derive(PartialEq))]
+#[cfg_attr(test, derive(PartialEq, Eq))]
 #[derive(Debug, serde::Deserialize)]
 pub struct User {
     #[serde(skip)]
@@ -38,7 +38,7 @@ pub struct User {
     pub(crate) refresh_token: String,
 }
 
-#[cfg_attr(test, derive(PartialEq))]
+#[cfg_attr(test, derive(PartialEq, Eq))]
 #[derive(Debug, serde::Deserialize)]
 pub struct ServiceAccount {
     #[serde(skip)]
