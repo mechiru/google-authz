@@ -32,10 +32,10 @@ This library provides auto-renewed tokens for Google service authentication.<br>
 use google_authz::{Credentials, GoogleAuthz};
 
 let credentials = Credentials::builder().build().await.unwrap();
-let service = GoogleAuthz::builder(service).credentials(credentials).build().await;
+let service = GoogleAuthz::builder(service).credentials(credentials).build().await.unwrap();
 
 // same as above
-let service = GoogleAuthz::new(service).await;
+let service = GoogleAuthz::try_new(service).await.unwrap();
 ```
 
 
@@ -45,37 +45,37 @@ let service = GoogleAuthz::new(service).await;
 no auth:
 ```rust
 let credentials = Credentials::builder().no_credentials().build().await.unwrap();
-let service = GoogleAuthz::builder(service).credentials(credentials).build().await;
+let service = GoogleAuthz::builder(service).credentials(credentials).build().await.unwrap();
 ```
 
 api key:
 ```rust
 let credentials = Credentials::builder().api_key(api_key).build().await.unwrap();
-let service = GoogleAuthz::builder(service).credentials(credentials).build().await;
+let service = GoogleAuthz::builder(service).credentials(credentials).build().await.unwrap();
 ```
 
 json:
 ```rust
 let credentials = Credentials::builder().json(json).build().await.unwrap();
-let service = GoogleAuthz::builder(service).credentials(credentials).build().await;
+let service = GoogleAuthz::builder(service).credentials(credentials).build().await.unwrap();
 ```
 
 json file:
 ```rust
 let credentials = Credentials::builder().json_file(json_file).build().await.unwrap();
-let service = GoogleAuthz::builder(service).credentials(credentials).build().await;
+let service = GoogleAuthz::builder(service).credentials(credentials).build().await.unwrap();
 ```
 
 metadata:
 ```rust
 let credentials = Credentials::builder().metadata(None).build().await.unwrap();
-let service = GoogleAuthz::builder(service).credentials(credentials).build().await;
+let service = GoogleAuthz::builder(service).credentials(credentials).build().await.unwrap();
 ```
 
 scope:
 ```rust
 let credentials = Credentials::builder().scopes(scopes).build().await.unwrap();
-let service = GoogleAuthz::builder(service).credentials(credentials).build().await;
+let service = GoogleAuthz::builder(service).credentials(credentials).build().await.unwrap();
 ```
 
 
@@ -90,7 +90,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let project = env::args().nth(1).expect("cargo run --bin tonic -- <GCP_PROJECT_ID>");
     let channel = Channel::from_static("https://pubsub.googleapis.com").connect().await?;
-    let channel = GoogleAuthz::new(channel).await;
+    let channel = GoogleAuthz::try_new(channel).await.unwrap();
 
     let mut client = PublisherClient::new(channel);
     let response = client
