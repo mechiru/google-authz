@@ -14,7 +14,7 @@ impl ApiKey {
     }
 
     #[inline]
-    pub fn add_query<B>(&self, req: Request<B>) -> Request<B> {
+    pub fn add_query<B>(&self, req: Request<B>) -> crate::auth::Result<Request<B>> {
         let (mut head, body) = req.into_parts();
         let s = {
             let mut s = head.uri.path().to_owned();
@@ -31,10 +31,10 @@ impl ApiKey {
         };
 
         let mut parts = head.uri.into_parts();
-        parts.path_and_query = Some(PathAndQuery::try_from(s).unwrap());
+        parts.path_and_query = Some(PathAndQuery::try_from(s)?);
 
-        head.uri = Uri::from_parts(parts).unwrap();
-        Request::from_parts(head, body)
+        head.uri = Uri::from_parts(parts)?;
+        Ok(Request::from_parts(head, body))
     }
 }
 

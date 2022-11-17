@@ -4,7 +4,10 @@ use hyper::Uri;
 use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
 
 use crate::{
-    auth::oauth2::{http::Client, token},
+    auth::{
+        oauth2::{http::Client, token},
+        AuthBuilderError,
+    },
     credentials,
 };
 
@@ -51,16 +54,18 @@ pub struct ServiceAccount {
 }
 
 impl ServiceAccount {
-    pub(crate) fn new(sa: credentials::ServiceAccount) -> Self {
-        Self {
+    pub(crate) fn try_new(sa: credentials::ServiceAccount) -> Result<Self, AuthBuilderError> {
+        let private_key = EncodingKey::from_rsa_pem(sa.private_key.as_bytes())?;
+        let token_uri = Uri::from_maybe_shared(sa.token_uri.clone())?;
+        Ok(Self {
             inner: Client::new(),
             header: header("JWT", sa.private_key_id),
-            private_key: EncodingKey::from_rsa_pem(sa.private_key.as_bytes()).unwrap(),
-            token_uri: Uri::from_maybe_shared(sa.token_uri.clone()).unwrap(),
+            private_key,
+            token_uri,
             token_uri_str: sa.token_uri,
             scopes: sa.scopes.join(" "),
             client_email: sa.client_email,
-        }
+        })
     }
 }
 
@@ -83,10 +88,13 @@ impl token::Fetcher for ServiceAccount {
             exp: iat + EXPIRE,
         };
 
-        let req = self.inner.request(&self.token_uri, &Payload {
-            grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-            assertion: &encode(&self.header, &claims, &self.private_key).unwrap(),
-        });
+        let req = self.inner.request(
+            &self.token_uri,
+            &Payload {
+                grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+                assertion: &encode(&self.header, &claims, &self.private_key).unwrap(),
+            },
+        );
         Box::pin(self.inner.send(req))
     }
 }

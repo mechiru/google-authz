@@ -11,7 +11,7 @@ use futures_util::{
 use hyper::Request;
 
 use crate::{
-    auth::{self, Auth, Config},
+    auth::{self, Auth, AuthBuilderError, Config},
     credentials::Credentials,
 };
 
@@ -32,7 +32,11 @@ pub struct Builder<S> {
 
 impl Builder<()> {
     pub fn new<S>(service: S) -> Builder<S> {
-        Builder { config: Default::default(), credentials: Default::default(), service }
+        Builder {
+            config: Default::default(),
+            credentials: Default::default(),
+            service,
+        }
     }
 }
 
@@ -56,16 +60,21 @@ impl<S> Builder<S> {
         self
     }
 
-    pub async fn build<B>(self) -> GoogleAuthz<S>
+    pub async fn build<B>(self) -> Result<GoogleAuthz<S>, AuthBuilderError>
     where
         S: tower_service::Service<Request<B>>,
     {
-        let Builder { config, credentials, service } = self;
+        let Builder {
+            config,
+            credentials,
+            service,
+        } = self;
         let credentials = match credentials {
             Some(credentials) => credentials,
             None => Credentials::new().await,
         };
-        GoogleAuthz { auth: Auth::new(credentials, config), service }
+        let auth = Auth::try_new(credentials, config)?;
+        Ok(GoogleAuthz { auth, service })
     }
 }
 
@@ -75,7 +84,7 @@ pub struct GoogleAuthz<S> {
 }
 
 impl GoogleAuthz<()> {
-    pub async fn new<S, B>(service: S) -> GoogleAuthz<S>
+    pub async fn try_new<S, B>(service: S) -> Result<GoogleAuthz<S>, AuthBuilderError>
     where
         S: tower_service::Service<Request<B>>,
     {
@@ -89,7 +98,10 @@ impl GoogleAuthz<()> {
 
 impl<S: Clone> Clone for GoogleAuthz<S> {
     fn clone(&self) -> Self {
-        Self { auth: self.auth.clone(), service: self.service.clone() }
+        Self {
+            auth: self.auth.clone(),
+            service: self.service.clone(),
+        }
     }
 }
 
@@ -158,8 +170,14 @@ mod test {
             }
         }
 
-        let credentials = Credentials::builder().no_credentials().build().await.unwrap();
-        let svc = GoogleAuthz::builder(Counter(0)).credentials(credentials).build();
+        let credentials = Credentials::builder()
+            .no_credentials()
+            .build()
+            .await
+            .unwrap();
+        let svc = GoogleAuthz::builder(Counter(0))
+            .credentials(credentials)
+            .build();
         assert_send(&svc);
         assert_sync(&svc);
     }

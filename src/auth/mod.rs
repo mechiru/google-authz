@@ -1,4 +1,7 @@
-use std::task::{self, Poll};
+use std::{
+    convert::TryFrom,
+    task::{self, Poll},
+};
 
 use hyper::Request;
 
@@ -35,16 +38,19 @@ enum Inner {
     Oauth2(oauth2::Oauth2),
 }
 
-impl From<(Credentials, &Config)> for Inner {
-    fn from((credentials, config): (Credentials, &Config)) -> Self {
+impl TryFrom<(Credentials, &Config)> for Inner {
+    type Error = AuthBuilderError;
+    fn try_from(
+        (credentials, config): (Credentials, &Config),
+    ) -> std::result::Result<Self, AuthBuilderError> {
         let fetcher: Box<dyn Fetcher> = match credentials {
-            Credentials::None => return Self::None,
-            Credentials::ApiKey(key) => return Self::ApiKey(api_key::ApiKey::new(key)),
+            Credentials::None => return Ok(Self::None),
+            Credentials::ApiKey(key) => return Ok(Self::ApiKey(api_key::ApiKey::new(key))),
             Credentials::User(user) => Box::new(User::new(user)),
-            Credentials::ServiceAccount(sa) => Box::new(ServiceAccount::new(sa)),
-            Credentials::Metadata(meta) => Box::new(Metadata::new(meta)),
+            Credentials::ServiceAccount(sa) => Box::new(ServiceAccount::try_new(sa)?),
+            Credentials::Metadata(meta) => Box::new(Metadata::try_new(meta)?),
         };
-        Self::Oauth2(Oauth2::new(fetcher, config.max_retry))
+        Ok(Self::Oauth2(Oauth2::new(fetcher, config.max_retry)))
     }
 }
 
@@ -57,12 +63,16 @@ pub(crate) struct Auth {
 }
 
 impl Auth {
-    pub fn new(credentials: Credentials, config: Config) -> Self {
-        Self {
-            inner: (credentials, &config).into(),
+    pub fn try_new(
+        credentials: Credentials,
+        config: Config,
+    ) -> std::result::Result<Self, AuthBuilderError> {
+        let inner = Inner::try_from((credentials, &config))?;
+        Ok(Self {
+            inner,
             #[cfg(not(feature = "tonic"))]
             enforce_https: config.enforce_https,
-        }
+        })
     }
 
     #[inline]
@@ -82,7 +92,7 @@ impl Auth {
 
         match self.inner {
             Inner::None => Ok(req),
-            Inner::ApiKey(ref key) => Ok(key.add_query(req)),
+            Inner::ApiKey(ref key) => Ok(key.add_query(req)?),
             Inner::Oauth2(ref oauth2) => Ok(oauth2.add_header(req)),
         }
     }
