@@ -33,7 +33,7 @@ jsonwebtoken = "8.1"
 gcemeta = "0.2"
 tower-service = "0.3"
 hyper = { version = "0.14", features = ["client", "http2"] }
-hyper-rustls = { version = "0.23", default-features = false, features = ["http2"], optional = true }
+hyper-rustls = { version = "0.24", default-features = false, features = ["http2"], optional = true }
 
 [dev-dependencies]
 tokio = { version = "1.18", features = ["macros"] }

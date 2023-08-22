@@ -9,7 +9,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tokio = { version = "1.18", features = ["macros", "rt-multi-thread"] }
 google-authz = { path = "../", features = ["tonic"] }
 # grpc + gcp
-tonic = { version = "0.7", features = ["tls", "tls-webpki-roots"] }
+tonic = { version = "0.9", features = ["tls", "tls-webpki-roots"] }
 prost = "0.10"
 prost-types = "0.10"
 google-api-proto = { version = "1", features = ["google-pubsub-v1"] }
